@@ -32,6 +32,10 @@
 struct ParserOptions
 {
     const char* FileName;
+    std::vector<const char*> Defines;
+    std::vector<const char*> IncludeDirs;
+    int ToolSetToUse;
+    bool Verbose;
 };
 
 struct ParserResult

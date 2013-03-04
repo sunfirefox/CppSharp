@@ -25,7 +25,7 @@
 
 //-----------------------------------//
 
-Parser::Parser(ParserOptions Opts) : Lib(Opts->Library), Index(0)
+Parser::Parser(const ParserOptions& Opts)
 {
     Setup(Opts);
 }
@@ -68,7 +68,7 @@ bool GetVisualStudioEnv(const char* env,
                         int probeFrom = 0, int probeTo = 0);
 #endif
 
-void Parser::Setup(ParserOptions^ Opts)
+void Parser::Setup(const ParserOptions& Opts)
 {
     using namespace clang;
     using namespace clix;
@@ -101,18 +101,18 @@ void Parser::Setup(ParserOptions^ Opts)
     C->createFileManager();
     C->createSourceManager(C->getFileManager());
 
-    if (Opts->Verbose)
+    if (Opts.Verbose)
         C->getHeaderSearchOpts().Verbose = true;
 
-    for each(System::String^% include in Opts->IncludeDirs)
+    for (auto& include : Opts.IncludeDirs)
     {
-        String s = marshalString<E_UTF8>(include);
+        String s = include;
         C->getHeaderSearchOpts().AddPath(s, frontend::Angled, false, false);
     }
 
-    for each(System::String^% def in Opts->Defines)
+    for (auto& def : Opts.Defines)
     {
-        String s = marshalString<E_UTF8>(def);
+        String s = def;
         C->getPreprocessorOpts().addMacroDef(s);
     }
 
@@ -135,7 +135,7 @@ void Parser::Setup(ParserOptions^ Opts)
 
 #ifdef _MSC_VER
     std::vector<std::string> SystemDirs;
-    if(GetVisualStudioEnv("INCLUDE", SystemDirs, Opts->ToolSetToUse, Opts->ToolSetToUse))
+    if(GetVisualStudioEnv("INCLUDE", SystemDirs, Opts.ToolSetToUse, Opts.ToolSetToUse))
     {
         clang::HeaderSearchOptions& HSOpts = C->getHeaderSearchOpts();
 
