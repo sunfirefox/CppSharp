@@ -5,6 +5,8 @@
 *
 ************************************************************************/
 
+#include "AST.h"
+
 #include <llvm/Support/Host.h>
 #include <clang/Frontend/CompilerInstance.h>
 #include <clang/Frontend/CompilerInvocation.h>
@@ -24,88 +26,45 @@
 #include <string>
 #include <cstdarg>
 
-#using <Bridge.dll>
-#include <vcclr.h>
-
 #define ARRAY_SIZE(arr) (sizeof(arr) / sizeof(arr[0]))
 #define Debug printf
 
-using namespace System::Collections::Generic;
-
-public ref struct ParserOptions
+struct ParserOptions
 {
-    ParserOptions()
-    {
-        IncludeDirs = gcnew List<System::String^>();
-        Defines = gcnew List<System::String^>();
-    }
-
-    // Include directories
-    List<System::String^>^ IncludeDirs;
-    List<System::String^>^ Defines;
-
-    // C/C++ header file name.
-    System::String^ FileName;
-
-    Cxxi::Library^ Library;
-
-    // Toolset version - 2005 - 8, 2008 - 9, 2010 - 10, 0 - autoprobe for any.
-    int ToolSetToUse;
-
-    bool Verbose;
+    const char* FileName;
 };
 
-public value struct ParserDiagnostic
+struct ParserResult
 {
-    System::String^ FileName;
-    System::String^ Message;
-};
 
-public enum struct ParserResultKind
-{
-    Success,
-    Error,
-    FileNotFound
-};
-
-public ref struct ParserResult
-{
-    ParserResult()
-    {
-        Diagnostics = gcnew List<ParserDiagnostic>(); 
-    }
-
-    ParserResultKind Kind;
-    Cxxi::Library^ Library;
-    List<ParserDiagnostic>^ Diagnostics;
 };
 
 struct Parser
 {
-    Parser(ParserOptions^ Opts);
+    Parser(const ParserOptions& Opts);
 
-    void Setup(ParserOptions^ Opts);
-    ParserResult^ Parse(const std::string& File);
+    void Setup(const ParserOptions& Opts);
+    ParserResult Parse(const std::string& File);
 
 protected:
 
     // AST traversers
     void WalkAST();
     void WalkMacros(clang::PreprocessingRecord* PR);
-    Cxxi::Declaration^ WalkDeclaration(clang::Decl* D, clang::TypeLoc* = 0,
+    Declaration WalkDeclaration(clang::Decl* D, clang::TypeLoc* = 0,
         bool IgnoreSystemDecls = true, bool CanBeDefinition = false);
-    Cxxi::Declaration^ WalkDeclarationDef(clang::Decl* D);
-    Cxxi::Enumeration^ WalkEnum(clang::EnumDecl*);
-    Cxxi::Function^ WalkFunction(clang::FunctionDecl*, bool IsDependent = false,
+    Declaration WalkDeclarationDef(clang::Decl* D);
+    Enumeration WalkEnum(clang::EnumDecl*);
+    Function WalkFunction(clang::FunctionDecl*, bool IsDependent = false,
         bool AddToNamespace = true);
-    Cxxi::Class^ WalkRecordCXX(clang::CXXRecordDecl*, bool IsDependent = false);
-    Cxxi::Method^ WalkMethodCXX(clang::CXXMethodDecl*);
-    Cxxi::Field^ WalkFieldCXX(clang::FieldDecl*, Cxxi::Class^);
-    Cxxi::ClassTemplate^ Parser::WalkClassTemplate(clang::ClassTemplateDecl*);
-    Cxxi::FunctionTemplate^ Parser::WalkFunctionTemplate(
+    Class WalkRecordCXX(clang::CXXRecordDecl*, bool IsDependent = false);
+    Method WalkMethodCXX(clang::CXXMethodDecl*);
+    Field WalkFieldCXX(clang::FieldDecl*, Cxxi::Class^);
+    ClassTemplate Parser::WalkClassTemplate(clang::ClassTemplateDecl*);
+    FunctionTemplate Parser::WalkFunctionTemplate(
         clang::FunctionTemplateDecl*);
-    Cxxi::Variable^ WalkVariable(clang::VarDecl*);
-    Cxxi::Type^ WalkType(clang::QualType, clang::TypeLoc* = 0,
+    Variable WalkVariable(clang::VarDecl*);
+    Type WalkType(clang::QualType, clang::TypeLoc* = 0,
       bool DesugarType = false);
 
     // Clang helpers
@@ -117,11 +76,9 @@ protected:
     void WalkFunction(clang::FunctionDecl* FD, Cxxi::Function^ F,
         bool IsDependent = false);
 
-    Cxxi::TranslationUnit^ GetModule(clang::SourceLocation Loc);
-    Cxxi::Namespace^ GetNamespace(const clang::NamedDecl*);
+    TranslationUnit GetModule(clang::SourceLocation Loc);
+    Namespace GetNamespace(const clang::NamedDecl*);
 
-    int Index;
-    gcroot<Cxxi::Library^> Lib;
     llvm::OwningPtr<clang::CompilerInstance> C;
     clang::ASTContext* AST;
 };

@@ -8,18 +8,11 @@
 #include "Parser.h"
 #include "Interop.h"
 
-public ref class ClangParser
+ParserResult Parse(ParserOptions Opts)
 {
-public:
-    
-    static ParserResult^ Parse(ParserOptions^ Opts)
-    {
-        if (!Opts->FileName) return nullptr;
+    if (!Opts.FileName)
+        return ParserResult();
 
-        using namespace clix;
-        std::string File = marshalString<E_UTF8>(Opts->FileName);
-
-        Parser p(Opts);
-        return p.Parse(File);
-    }
-};
+    Parser p(Opts);
+    return p.Parse(Opts.FileName);
+}

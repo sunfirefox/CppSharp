@@ -25,7 +25,7 @@
 
 //-----------------------------------//
 
-Parser::Parser(ParserOptions^ Opts) : Lib(Opts->Library), Index(0)
+Parser::Parser(ParserOptions Opts) : Lib(Opts->Library), Index(0)
 {
     Setup(Opts);
 }
