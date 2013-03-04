@@ -204,21 +204,42 @@ enum struct CXXOperatorKind
     Conditional
 };
 
-struct Method : Function
-{
-
-};
-
-struct Enumeration : Declaration
-{
-
-};
-
 enum struct AccessSpecifier
 {
     Private,
     Protected,
     Public
+};
+
+struct Method : Function
+{
+    AccessSpecifier Access;
+
+    bool IsVirtual;
+    bool IsStatic;
+    bool IsConst;
+    bool IsImplicit;
+
+    CXXMethodKind Kind;
+    CXXOperatorKind OperatorKind;
+};
+
+enum struct EnumModifiers
+{
+    Anonymous,
+    Scoped,
+    Flags
+};
+
+struct EnumerationItem
+{
+    const char* Name;
+    long Value;
+};
+
+struct Enumeration : Declaration
+{
+    EnumModifiers Modifiers;
 };
 
 struct BaseClassSpecifier
@@ -231,28 +252,52 @@ struct BaseClassSpecifier
 struct Class : Declaration
 {
     std::vector<BaseClassSpecifier> Bases;
+    std::vector<Field> Fields;
+    std::vector<Method> Methods;
+
+    bool IsPOD;
+    bool IsAbstract;
+    bool IsUnion;
 };
 
 struct Field : Declaration
 {
+    QualifiedType Type;
+
+    AccessSpecifier Access;
+    unsigned Offset;
+    Class* Class;
 };
 
 struct ClassTemplate : Declaration
 {
+    Declaration* TemplatedDecl;
 };
 
 struct FunctionTemplate : Declaration
 {
-};
-
-struct Variable : Declaration
-{
+    Declaration* TemplatedDecl;
 };
 
 struct Namespace : Declaration
 {
+    std::vector<Namespace*> Namespaces;
+    std::vector<Enumeration*> Enums;
+    std::vector<Function*> Functions;
+    std::vector<Enumeration*> Classes;
+    std::vector<ClassTemplate*> ClassTemplates;
+    std::vector<FunctionTemplate*> FunctionTemplates;
+    std::vector<TypedefDecl*> Typedefs;
 };
 
-struct TranslationUnit
+struct TranslationUnit : Namespace
 {
+    const char* FileName;
+    bool IsSystemHeader;
+    std::vector<Namespace*> Namespaces;
+};
+
+struct Library
+{
+
 };
