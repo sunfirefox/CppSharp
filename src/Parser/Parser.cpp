@@ -23,7 +23,6 @@
 #include <sstream>
 
 using namespace Cxxi;
-namespace clix {}
 
 //-----------------------------------//
 
@@ -73,7 +72,6 @@ bool GetVisualStudioEnv(const char* env,
 void Parser::Setup(const ParserOptions& Opts)
 {
     using namespace clang;
-    using namespace clix;
 
     const char* args[] =
     {
@@ -323,7 +321,6 @@ static bool HasClassDependentFields(clang::CXXRecordDecl* Record)
 Bridge::Class* Parser::WalkRecordCXX(clang::CXXRecordDecl* Record, bool IsDependent)
 {
     using namespace clang;
-    using namespace clix;
 
     if (Record->hasFlexibleArrayMember())
     {
@@ -414,7 +411,6 @@ Bridge::Class* Parser::WalkRecordCXX(clang::CXXRecordDecl* Record, bool IsDepend
 Bridge::ClassTemplate* Parser::WalkClassTemplate(clang::ClassTemplateDecl* TD)
 {
     using namespace clang;
-    using namespace clix;
 
     auto NS = GetNamespace(TD);
 
@@ -430,7 +426,6 @@ Bridge::ClassTemplate* Parser::WalkClassTemplate(clang::ClassTemplateDecl* TD)
 Bridge::FunctionTemplate* Parser::WalkFunctionTemplate(clang::FunctionTemplateDecl* TD)
 {
     using namespace clang;
-    using namespace clix;
 
     auto NS = GetNamespace(TD);
 
@@ -521,7 +516,6 @@ Bridge::Method* Parser::WalkMethodCXX(clang::CXXMethodDecl* MD)
 Bridge::Field* Parser::WalkFieldCXX(clang::FieldDecl* FD, Bridge::Class* Class)
 {
     using namespace clang;
-    using namespace clix;
 
     auto NS = GetNamespace(FD);
     assert(NS && "Expected a valid namespace");
@@ -545,7 +539,6 @@ Bridge::Field* Parser::WalkFieldCXX(clang::FieldDecl* FD, Bridge::Class* Class)
 Bridge::Namespace* Parser::GetNamespace(const clang::NamedDecl* ND)
 {
     using namespace clang;
-    using namespace clix;
 
     SourceLocation Loc = ND->getLocation();
     auto M = GetModule(Loc);
@@ -654,7 +647,6 @@ Bridge::Type* Parser::WalkType(clang::QualType QualType, clang::TypeLoc* TL,
     bool DesugarType)
 {
     using namespace clang;
-    using namespace clix;
 
     if (QualType.isNull())
         return nullptr;
@@ -941,7 +933,6 @@ Bridge::Type* Parser::WalkType(clang::QualType QualType, clang::TypeLoc* TL,
 Bridge::Enumeration* Parser::WalkEnum(clang::EnumDecl* ED)
 {
     using namespace clang;
-    using namespace clix;
 
     auto NS = GetNamespace(ED);
     assert(NS && "Expected a valid namespace");
@@ -1023,7 +1014,6 @@ void Parser::WalkFunction(clang::FunctionDecl* FD, Bridge::Function* F,
                           bool IsDependent)
 {
     using namespace clang;
-    using namespace clix;
 
     auto FT = FD->getType()->getAs<FunctionType>();
     auto CC = FT->getCallConv();
@@ -1070,7 +1060,6 @@ Bridge::Function* Parser::WalkFunction(clang::FunctionDecl* FD, bool IsDependent
                                      bool AddToNamespace)
 {
     using namespace clang;
-    using namespace clix;
 
     auto NS = GetNamespace(FD);
     assert(NS && "Expected a valid namespace");
@@ -1150,7 +1139,6 @@ void Parser::WalkAST()
 Bridge::TranslationUnit* Parser::GetModule(clang::SourceLocation Loc)
 {
     using namespace clang;
-    using namespace clix;
 
     SourceManager& SM = C->getSourceManager();
 
@@ -1177,7 +1165,6 @@ Bridge::TranslationUnit* Parser::GetModule(clang::SourceLocation Loc)
 void Parser::WalkMacros(clang::PreprocessingRecord* PR)
 {
     using namespace clang;
-    using namespace clix;
 
     Preprocessor& P = C->getPreprocessor();
 
@@ -1242,7 +1229,6 @@ void Parser::WalkMacros(clang::PreprocessingRecord* PR)
 Bridge::Variable* Parser::WalkVariable(clang::VarDecl *VD)
 {
     using namespace clang;
-    using namespace clix;
 
     auto Var = new Bridge::Variable();
     Var->Name = VD->getName();
@@ -1255,7 +1241,6 @@ Bridge::Variable* Parser::WalkVariable(clang::VarDecl *VD)
 void Parser::HandleComments(clang::Decl* D, Bridge::Declaration* Decl)
 {
     using namespace clang;
-    using namespace clix;
 
     // Get the declaration comment.
     std::string BriefText;
@@ -1290,7 +1275,6 @@ Bridge::Declaration* Parser::WalkDeclaration(clang::Decl* D, clang::TypeLoc* TL,
                                            bool CanBeDefinition)
 {
     using namespace clang;
-    using namespace clix;
 
     // Ignore declarations that do not come from user-provided
     // header files.
@@ -1540,8 +1524,6 @@ ParserResult Parser::Parse(const std::string& File)
     // Convert the diagnostics to the managed types
     for(auto& Diag : DiagClient->Diagnostics)
     {
-        using namespace clix;
-
         auto& Source = C->getSourceManager();
         auto FileName = Source.getFilename(Diag.Location);
 
