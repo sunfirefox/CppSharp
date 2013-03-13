@@ -1,7 +1,7 @@
 /************************************************************************
 *
 * Cxxi
-* Licensed under the simplified BSD license. All rights reserved.
+* Licensed under the MIT license.
 *
 ************************************************************************/
 
