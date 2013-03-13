@@ -4,6 +4,8 @@ clang_msvc_flags =
   "/wd4355", "/wd4996", "/wd4624", "/wd4291"
 }
 
+config = { ManagedParser = false }
+
 project "Parser"
   
   kind "SharedLib"
@@ -11,19 +13,21 @@ project "Parser"
   SetupNativeProject()
   
   dependson { "Bridge" }
-  flags { common_flags, "Managed" }
+  flags { common_flags }
 
   -- usingdirs is only supported in per-file configs in our
   -- premake build. remove this once this support is added
   -- at the project level.
-  
-  configuration { "*Main.cpp" }
-    flags { "Managed" }
-    usingdirs { libdir }
-    
-  configuration { "*Parser.cpp" }
-    flags { "Managed" }
-    usingdirs { libdir }
+
+  if config.ManagedParser then
+    configuration { "*Main.cpp" }
+      flags { "Managed" }
+      usingdirs { libdir }
+      
+    configuration { "*Parser.cpp" }
+      flags { "Managed" }
+      usingdirs { libdir }
+  end
 
   configuration "vs*"
     buildoptions { clang_msvc_flags }

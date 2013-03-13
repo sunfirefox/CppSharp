@@ -6,7 +6,6 @@
 ************************************************************************/
 
 #include "Parser.h"
-#include "Interop.h"
 
 #include <llvm/Support/Path.h>
 #include <clang/Basic/Version.h>
@@ -22,6 +21,9 @@
 #include <string>
 #include <iostream>
 #include <sstream>
+
+using namespace Cxxi;
+namespace clix {}
 
 //-----------------------------------//
 
@@ -264,18 +266,18 @@ std::string Parser::GetTypeName(const clang::Type* Type)
     return TypeName;
 }
 
-Cxxi::TypeQualifiers GetTypeQualifiers(clang::QualType Type)
+Bridge::TypeQualifiers GetTypeQualifiers(clang::QualType Type)
 {
-    Cxxi::TypeQualifiers quals;
+    Bridge::TypeQualifiers quals;
     quals.IsConst = Type.isLocalConstQualified();
     quals.IsRestrict = Type.isLocalRestrictQualified();
     quals.IsVolatile = Type.isVolatileQualified();
     return quals;
 }
 
-Cxxi::QualifiedType GetQualifiedType(clang::QualType qual, Cxxi::Type^ type)
+Bridge::QualifiedType GetQualifiedType(clang::QualType qual, Bridge::Type* type)
 {
-    Cxxi::QualifiedType qualType;
+    Bridge::QualifiedType qualType;
     qualType.Type = type;
     qualType.Qualifiers = GetTypeQualifiers(qual);
     return qualType;
@@ -283,19 +285,19 @@ Cxxi::QualifiedType GetQualifiedType(clang::QualType qual, Cxxi::Type^ type)
 
 //-----------------------------------//
 
-static Cxxi::AccessSpecifier ConvertToAccess(clang::AccessSpecifier AS)
+static Bridge::AccessSpecifier ConvertToAccess(clang::AccessSpecifier AS)
 {
     switch(AS)
     {
     case clang::AS_private:
-        return Cxxi::AccessSpecifier::Private;
+        return Bridge::AccessSpecifier::Private;
     case clang::AS_protected:
-        return Cxxi::AccessSpecifier::Protected;
+        return Bridge::AccessSpecifier::Protected;
     case clang::AS_public:
-        return Cxxi::AccessSpecifier::Public;
+        return Bridge::AccessSpecifier::Public;
     }
 
-    return Cxxi::AccessSpecifier::Public;
+    return Bridge::AccessSpecifier::Public;
 }
 
 static bool HasClassDependentFields(clang::CXXRecordDecl* Record)
@@ -318,7 +320,7 @@ static bool HasClassDependentFields(clang::CXXRecordDecl* Record)
     return false;
 }
 
-Cxxi::Class^ Parser::WalkRecordCXX(clang::CXXRecordDecl* Record, bool IsDependent)
+Bridge::Class* Parser::WalkRecordCXX(clang::CXXRecordDecl* Record, bool IsDependent)
 {
     using namespace clang;
     using namespace clix;
@@ -333,7 +335,7 @@ Cxxi::Class^ Parser::WalkRecordCXX(clang::CXXRecordDecl* Record, bool IsDependen
     assert(NS && "Expected a valid namespace");
 
     bool isCompleteDefinition = Record->isCompleteDefinition();
-    auto Name = marshalString<E_UTF8>(GetTagDeclName(Record));
+    auto Name = GetTagDeclName(Record);
     auto RC = NS->FindClass(Name, isCompleteDefinition, /*Create=*/false);
 
     if (RC)
@@ -352,8 +354,8 @@ Cxxi::Class^ Parser::WalkRecordCXX(clang::CXXRecordDecl* Record, bool IsDependen
     for(auto it = Record->ctor_begin(); it != Record->ctor_end(); ++it)
     {
         CXXMethodDecl* Ctor = (*it);
-        Cxxi::Method^ Method = WalkMethodCXX(Ctor);
-        RC->Methods->Add(Method);
+        auto Method = WalkMethodCXX(Ctor);
+        RC->Methods.push_back(Method);
     }
 
     // Iterate through the record methods.
@@ -364,8 +366,8 @@ Cxxi::Class^ Parser::WalkRecordCXX(clang::CXXRecordDecl* Record, bool IsDependen
         if( isa<CXXConstructorDecl>(M) || isa<CXXDestructorDecl>(M) )
             continue;
         
-        Cxxi::Method^ Method = WalkMethodCXX(M);
-        RC->Methods->Add(Method);
+        auto Method = WalkMethodCXX(M);
+        RC->Methods.push_back(Method);
     }
 
     if (!IsDependent)
@@ -381,12 +383,12 @@ Cxxi::Class^ Parser::WalkRecordCXX(clang::CXXRecordDecl* Record, bool IsDependen
     {
         FieldDecl* FD = (*it);
         
-        Cxxi::Field^ Field = WalkFieldCXX(FD, RC);
+        auto Field = WalkFieldCXX(FD, RC);
         
         if (Layout)
             Field->Offset = Layout->getFieldOffset(FD->getFieldIndex());
 
-        RC->Fields->Add(Field);
+        RC->Fields.push_back(Field);
     }
 
     // Iterate through the record bases.
@@ -394,12 +396,12 @@ Cxxi::Class^ Parser::WalkRecordCXX(clang::CXXRecordDecl* Record, bool IsDependen
     {
         clang::CXXBaseSpecifier &BS = *it;
 
-        Cxxi::BaseClassSpecifier^ Base = gcnew Cxxi::BaseClassSpecifier();
+        auto Base = new Bridge::BaseClassSpecifier();
         Base->Access = ConvertToAccess(BS.getAccessSpecifier());
         Base->IsVirtual = BS.isVirtual();
         Base->Type = WalkType(BS.getType(), &BS.getTypeSourceInfo()->getTypeLoc());
 
-        RC->Bases->Add(Base);
+        RC->Bases.push_back(Base);
     }
 
     //Debug("Size: %I64d\n", Layout.getSize().getQuantity());
@@ -409,7 +411,7 @@ Cxxi::Class^ Parser::WalkRecordCXX(clang::CXXRecordDecl* Record, bool IsDependen
 
 //-----------------------------------//
 
-Cxxi::ClassTemplate^ Parser::WalkClassTemplate(clang::ClassTemplateDecl* TD)
+Bridge::ClassTemplate* Parser::WalkClassTemplate(clang::ClassTemplateDecl* TD)
 {
     using namespace clang;
     using namespace clix;
@@ -417,14 +419,15 @@ Cxxi::ClassTemplate^ Parser::WalkClassTemplate(clang::ClassTemplateDecl* TD)
     auto NS = GetNamespace(TD);
 
     auto Class = WalkRecordCXX(TD->getTemplatedDecl(), /*IsDependent*/true);
-    Cxxi::ClassTemplate^ CT = gcnew Cxxi::ClassTemplate(Class);
+    auto CT = new Bridge::ClassTemplate();
+    CT->TemplatedDecl = Class;
 
     return CT;
 }
 
 //-----------------------------------//
 
-Cxxi::FunctionTemplate^ Parser::WalkFunctionTemplate(clang::FunctionTemplateDecl* TD)
+Bridge::FunctionTemplate* Parser::WalkFunctionTemplate(clang::FunctionTemplateDecl* TD)
 {
     using namespace clang;
     using namespace clix;
@@ -433,14 +436,15 @@ Cxxi::FunctionTemplate^ Parser::WalkFunctionTemplate(clang::FunctionTemplateDecl
 
     auto Function = WalkFunction(TD->getTemplatedDecl(), /*IsDependent=*/true,
         /*AddToNamespace=*/false);
-    Cxxi::FunctionTemplate^ FT = gcnew Cxxi::FunctionTemplate(Function);
+    auto FT = new Bridge::FunctionTemplate();
+    FT->TemplatedDecl = Function;
 
     return FT;
 }
 
 //-----------------------------------//
 
-static Cxxi::CXXMethodKind GetMethodKindFromDecl(clang::DeclarationName Name)
+static Bridge::CXXMethodKind GetMethodKindFromDecl(clang::DeclarationName Name)
 {
     using namespace clang;
 
@@ -450,46 +454,46 @@ static Cxxi::CXXMethodKind GetMethodKindFromDecl(clang::DeclarationName Name)
     case DeclarationName::ObjCZeroArgSelector:
     case DeclarationName::ObjCOneArgSelector:
     case DeclarationName::ObjCMultiArgSelector:
-        return Cxxi::CXXMethodKind::Normal;
+        return Bridge::CXXMethodKind::Normal;
     case DeclarationName::CXXConstructorName:
-        return Cxxi::CXXMethodKind::Constructor;
+        return Bridge::CXXMethodKind::Constructor;
     case DeclarationName::CXXDestructorName:
-        return Cxxi::CXXMethodKind::Destructor;
+        return Bridge::CXXMethodKind::Destructor;
     case DeclarationName::CXXConversionFunctionName:
-        return Cxxi::CXXMethodKind::Conversion;
+        return Bridge::CXXMethodKind::Conversion;
     case DeclarationName::CXXOperatorName:
     case DeclarationName::CXXLiteralOperatorName:
-        return Cxxi::CXXMethodKind::Operator;
+        return Bridge::CXXMethodKind::Operator;
     case DeclarationName::CXXUsingDirective:
-        return Cxxi::CXXMethodKind::UsingDirective;
+        return Bridge::CXXMethodKind::UsingDirective;
     }
-    return Cxxi::CXXMethodKind::Normal;
+    return Bridge::CXXMethodKind::Normal;
 }
 
-static Cxxi::CXXOperatorKind GetOperatorKindFromDecl(clang::DeclarationName Name)
+static Bridge::CXXOperatorKind GetOperatorKindFromDecl(clang::DeclarationName Name)
 {
     using namespace clang;
 
     if (Name.getNameKind() != DeclarationName::CXXOperatorName)
-        return Cxxi::CXXOperatorKind::None;
+        return Bridge::CXXOperatorKind::None;
 
     switch(Name.getCXXOverloadedOperator())
     {
     #define OVERLOADED_OPERATOR(Name,Spelling,Token,Unary,Binary,MemberOnly) \
-    case OO_##Name: return Cxxi::CXXOperatorKind::Name;
+    case OO_##Name: return Bridge::CXXOperatorKind::Name;
     #include "clang/Basic/OperatorKinds.def"
     }
 
-    return Cxxi::CXXOperatorKind::None;
+    return Bridge::CXXOperatorKind::None;
 }
 
-Cxxi::Method^ Parser::WalkMethodCXX(clang::CXXMethodDecl* MD)
+Bridge::Method* Parser::WalkMethodCXX(clang::CXXMethodDecl* MD)
 {
     using namespace clang;
 
     DeclarationName Name = MD->getDeclName();
 
-    Cxxi::Method^ Method = gcnew Cxxi::Method();
+    auto Method = new Bridge::Method();
     Method->Access = ConvertToAccess(MD->getAccess());
     Method->Kind = GetMethodKindFromDecl(Name);
     Method->OperatorKind = GetOperatorKindFromDecl(Name);
@@ -514,7 +518,7 @@ Cxxi::Method^ Parser::WalkMethodCXX(clang::CXXMethodDecl* MD)
 
 //-----------------------------------//
 
-Cxxi::Field^ Parser::WalkFieldCXX(clang::FieldDecl* FD, Cxxi::Class^ Class)
+Bridge::Field* Parser::WalkFieldCXX(clang::FieldDecl* FD, Bridge::Class* Class)
 {
     using namespace clang;
     using namespace clix;
@@ -522,10 +526,10 @@ Cxxi::Field^ Parser::WalkFieldCXX(clang::FieldDecl* FD, Cxxi::Class^ Class)
     auto NS = GetNamespace(FD);
     assert(NS && "Expected a valid namespace");
 
-    Cxxi::Field^ F = gcnew Cxxi::Field();
+    auto F = new Bridge::Field();
     F->Namespace = NS;
 
-    F->Name = marshalString<E_UTF8>(FD->getName());
+    F->Name = FD->getName();
     auto TL = FD->getTypeSourceInfo()->getTypeLoc();
     F->QualifiedType = GetQualifiedType(FD->getType(), WalkType(FD->getType(), &TL));
     F->Access = ConvertToAccess(FD->getAccess());
@@ -538,13 +542,13 @@ Cxxi::Field^ Parser::WalkFieldCXX(clang::FieldDecl* FD, Cxxi::Class^ Class)
 
 //-----------------------------------//
 
-Cxxi::Namespace^ Parser::GetNamespace(const clang::NamedDecl* ND)
+Bridge::Namespace* Parser::GetNamespace(const clang::NamedDecl* ND)
 {
     using namespace clang;
     using namespace clix;
 
     SourceLocation Loc = ND->getLocation();
-    Cxxi::TranslationUnit^ M = GetModule(Loc);
+    auto M = GetModule(Loc);
 
     // If the declaration is at global scope, just early exit.
     const DeclContext *Ctx = ND->getDeclContext();
@@ -562,7 +566,7 @@ Cxxi::Namespace^ Parser::GetNamespace(const clang::NamedDecl* ND)
     assert(Contexts.back()->isTranslationUnit());
     Contexts.pop_back();
 
-    Cxxi::Namespace^ NS = M;
+    Bridge::Namespace* NS = M;
 
     for (auto I = Contexts.rbegin(), E = Contexts.rend(); I != E; ++I)
     {
@@ -575,7 +579,7 @@ Cxxi::Namespace^ Parser::GetNamespace(const clang::NamedDecl* ND)
             const NamespaceDecl* ND = cast<NamespaceDecl>(Ctx);
             if (ND->isAnonymousNamespace())
                 continue;
-            auto Name = marshalString<E_UTF8>(ND->getName());
+            auto Name = ND->getName();
             NS = NS->FindCreateNamespace(Name, NS);
             break;
         }
@@ -601,9 +605,9 @@ Cxxi::Namespace^ Parser::GetNamespace(const clang::NamedDecl* ND)
     return NS;
 }
 
-static Cxxi::PrimitiveType WalkBuiltinType(const clang::BuiltinType* Builtin)
+static Bridge::PrimitiveType WalkBuiltinType(const clang::BuiltinType* Builtin)
 {
-    using namespace Cxxi;
+    using namespace Cxxi::Bridge;
 
     assert(Builtin && "Expected a builtin type");
 
@@ -646,7 +650,7 @@ static Cxxi::PrimitiveType WalkBuiltinType(const clang::BuiltinType* Builtin)
 
 //-----------------------------------//
 
-Cxxi::Type^ Parser::WalkType(clang::QualType QualType, clang::TypeLoc* TL,
+Bridge::Type* Parser::WalkType(clang::QualType QualType, clang::TypeLoc* TL,
     bool DesugarType)
 {
     using namespace clang;
@@ -672,7 +676,7 @@ Cxxi::Type^ Parser::WalkType(clang::QualType QualType, clang::TypeLoc* TL,
         auto Builtin = Type->getAs<clang::BuiltinType>();
         assert(Builtin && "Expected a builtin type");
     
-        auto BT = gcnew Cxxi::BuiltinType();
+        auto BT = new Bridge::BuiltinType();
         BT->Type = WalkBuiltinType(Builtin);
         
         return BT;
@@ -684,7 +688,7 @@ Cxxi::Type^ Parser::WalkType(clang::QualType QualType, clang::TypeLoc* TL,
 
         //auto Name = marshalString<E_UTF8>(GetTagDeclName(ED));
 
-        auto TT = gcnew Cxxi::TagType();
+        auto TT = new Bridge::TagType();
         TT->Declaration = WalkDeclaration(ED, 0, /*IgnoreSystemDecls=*/false);
 
         return TT;
@@ -693,8 +697,8 @@ Cxxi::Type^ Parser::WalkType(clang::QualType QualType, clang::TypeLoc* TL,
     {
         auto Pointer = Type->getAs<clang::PointerType>();
         
-        auto P = gcnew Cxxi::PointerType();
-        P->Modifier = Cxxi::PointerType::TypeModifier::Pointer;
+        auto P = new Bridge::PointerType();
+        P->Modifier = Bridge::TypeModifier::Pointer;
 
         auto Next = TL->getNextTypeLoc();
 
@@ -709,10 +713,10 @@ Cxxi::Type^ Parser::WalkType(clang::QualType QualType, clang::TypeLoc* TL,
         TypedefNameDecl* TD = TT->getDecl();
 
         auto TTL = TD->getTypeSourceInfo()->getTypeLoc();
-        auto TDD = safe_cast<Cxxi::TypedefDecl^>(WalkDeclaration(TD, &TTL,
+        auto TDD = static_cast<Bridge::TypedefDecl*>(WalkDeclaration(TD, &TTL,
             /*IgnoreSystemDecls=*/false));
 
-        auto Type = gcnew Cxxi::TypedefType();
+        auto Type = new Bridge::TypedefType();
         Type->Declaration = TDD;
 
         return Type;
@@ -728,7 +732,7 @@ Cxxi::Type^ Parser::WalkType(clang::QualType QualType, clang::TypeLoc* TL,
         auto RT = Type->getAs<clang::RecordType>();
         RecordDecl* RD = RT->getDecl();
 
-        auto TT = gcnew Cxxi::TagType();
+        auto TT = new Bridge::TagType();
         TT->Declaration = WalkDeclaration(RD, 0, /*IgnoreSystemDecls=*/false);
 
         return TT;
@@ -743,10 +747,11 @@ Cxxi::Type^ Parser::WalkType(clang::QualType QualType, clang::TypeLoc* TL,
     {
         auto AT = AST->getAsConstantArrayType(QualType);
 
-        auto A = gcnew Cxxi::ArrayType();
+        auto A = new Bridge::ArrayType();
         auto Next = TL->getNextTypeLoc();
-        A->Type = WalkType(AT->getElementType(), &Next);
-        A->SizeType = Cxxi::ArrayType::ArraySize::Constant;
+        A->QualifiedType = GetQualifiedType(AT->getElementType(),
+            WalkType(AT->getElementType(), &Next));
+        A->SizeType = Bridge::ArrayTypeSize::Constant;
         A->Size = AST->getConstantArrayElementCount(AT);
 
         return A;
@@ -758,20 +763,22 @@ Cxxi::Type^ Parser::WalkType(clang::QualType QualType, clang::TypeLoc* TL,
         auto FTL = TL->getAs<FunctionProtoTypeLoc>();
         auto RL = FTL.getResultLoc();
 
-        auto F = gcnew Cxxi::FunctionType();
-        F->ReturnType = WalkType(FP->getResultType(), &RL);
+        auto F = new Bridge::FunctionType();
+        F->ReturnType = GetQualifiedType(FP->getResultType(),
+            WalkType(FP->getResultType(), &RL));
 
         for (unsigned i = 0; i < FP->getNumArgs(); ++i)
         {
-            auto FA = gcnew Cxxi::Parameter();
+            auto FA = new Bridge::Parameter();
 
             auto PVD = FTL.getArg(i);
             auto PTL = PVD->getTypeSourceInfo()->getTypeLoc();
 
-            FA->Name = marshalString<E_UTF8>(PVD->getNameAsString());
-            FA->QualifiedType = GetQualifiedType(PVD->getType(), WalkType(PVD->getType(), &PTL));
+            FA->Name = PVD->getNameAsString();
+            FA->QualifiedType = GetQualifiedType(PVD->getType(),
+                WalkType(PVD->getType(), &PTL));
 
-            F->Arguments->Add(FA);
+            F->Parameters.push_back(FA);
         }
 
         return F;
@@ -791,18 +798,19 @@ Cxxi::Type^ Parser::WalkType(clang::QualType QualType, clang::TypeLoc* TL,
         auto MP = Type->getAs<clang::MemberPointerType>();
         auto Next = TL->getNextTypeLoc();
 
-        auto MPT = gcnew Cxxi::MemberPointerType();
-        MPT->Pointee = WalkType(MP->getPointeeType(), &Next);
+        auto MPT = new Bridge::MemberPointerType();
+        MPT->Pointee = GetQualifiedType(MP->getPointeeType(),
+            WalkType(MP->getPointeeType(), &Next));
         
         return MPT;
     }
     case Type::TemplateSpecialization:
     {
         auto TS = Type->getAs<clang::TemplateSpecializationType>();
-        auto TST = gcnew Cxxi::TemplateSpecializationType();
+        auto TST = new Bridge::TemplateSpecializationType();
         
         TemplateName Name = TS->getTemplateName();
-        TST->Template = safe_cast<Cxxi::Template^>(WalkDeclaration(
+        TST->Template = static_cast<Bridge::Template*>(WalkDeclaration(
             Name.getAsTemplateDecl(), 0, /*IgnoreSystemDecls=*/false));
         
         auto TypeLocClass = TL->getTypeLocClass();
@@ -825,7 +833,7 @@ Cxxi::Type^ Parser::WalkType(clang::QualType QualType, clang::TypeLoc* TL,
         for (unsigned I = 0, E = TS->getNumArgs(); I != E; ++I)
         {
             const TemplateArgument& TA = TS->getArg(I);
-            auto Arg = Cxxi::TemplateArgument();
+            auto Arg = Bridge::TemplateArgument();
 
             TemplateArgumentLoc ArgLoc;
             ArgLoc = TSTL.getArgLoc(I);
@@ -834,39 +842,39 @@ Cxxi::Type^ Parser::WalkType(clang::QualType QualType, clang::TypeLoc* TL,
             {
             case TemplateArgument::Type:
             {
-                Arg.Kind = Cxxi::TemplateArgument::ArgumentKind::Type;
+                Arg.Kind = Bridge::TemplateArgumentKind::Type;
                 TypeLoc ArgTL;
                 ArgTL = ArgLoc.getTypeSourceInfo()->getTypeLoc();
                 Arg.Type = GetQualifiedType(TA.getAsType(), WalkType(TA.getAsType(), &ArgTL));
                 break;
             }
             case TemplateArgument::Declaration:
-                Arg.Kind = Cxxi::TemplateArgument::ArgumentKind::Declaration;
+                Arg.Kind = Bridge::TemplateArgumentKind::Declaration;
                 Arg.Declaration = WalkDeclaration(TA.getAsDecl(), 0);
                 break;
             case TemplateArgument::NullPtr:
-                Arg.Kind = Cxxi::TemplateArgument::ArgumentKind::NullPtr;
+                Arg.Kind = Bridge::TemplateArgumentKind::NullPtr;
                 break;
             case TemplateArgument::Integral:
-                Arg.Kind = Cxxi::TemplateArgument::ArgumentKind::Integral;
+                Arg.Kind = Bridge::TemplateArgumentKind::Integral;
                 //Arg.Type = WalkType(TA.getIntegralType(), 0);
                 Arg.Integral = TA.getAsIntegral().getLimitedValue();
                 break;
             case TemplateArgument::Template:
-                Arg.Kind = Cxxi::TemplateArgument::ArgumentKind::Template;
+                Arg.Kind = Bridge::TemplateArgumentKind::Template;
                 break;
             case TemplateArgument::TemplateExpansion:
-                Arg.Kind = Cxxi::TemplateArgument::ArgumentKind::TemplateExpansion;
+                Arg.Kind = Bridge::TemplateArgumentKind::TemplateExpansion;
                 break;
             case TemplateArgument::Expression:
-                Arg.Kind = Cxxi::TemplateArgument::ArgumentKind::Expression;
+                Arg.Kind = Bridge::TemplateArgumentKind::Expression;
                 break;
             case TemplateArgument::Pack:
-                Arg.Kind = Cxxi::TemplateArgument::ArgumentKind::Pack;
+                Arg.Kind = Bridge::TemplateArgumentKind::Pack;
                 break;
             }
 
-            TST->Arguments->Add(Arg);
+            TST->Arguments.push_back(Arg);
         }
 
         return TST;
@@ -874,7 +882,7 @@ Cxxi::Type^ Parser::WalkType(clang::QualType QualType, clang::TypeLoc* TL,
     case Type::TemplateTypeParm:
     {
         auto TP = Type->getAs<TemplateTypeParmType>();
-        auto TPT = gcnew Cxxi::TemplateParameterType();
+        auto TPT = new Bridge::TemplateParameterType();
         //TPT->Parameter = WalkDeclaration(TP->getDecl());
 
         return TPT;
@@ -893,8 +901,8 @@ Cxxi::Type^ Parser::WalkType(clang::QualType QualType, clang::TypeLoc* TL,
     {
         auto LR = Type->getAs<clang::LValueReferenceType>();
 
-        auto P = gcnew Cxxi::PointerType();
-        P->Modifier = Cxxi::PointerType::TypeModifier::LVReference;
+        auto P = new Bridge::PointerType();
+        P->Modifier = Bridge::TypeModifier::LVReference;
 
         TypeLoc Next;
         if (!TL->isNull())
@@ -909,8 +917,8 @@ Cxxi::Type^ Parser::WalkType(clang::QualType QualType, clang::TypeLoc* TL,
     {
         auto LR = Type->getAs<clang::RValueReferenceType>();
 
-        auto P = gcnew Cxxi::PointerType();
-        P->Modifier = Cxxi::PointerType::TypeModifier::RVReference;
+        auto P = new Bridge::PointerType();
+        P->Modifier = Bridge::TypeModifier::RVReference;
 
         TypeLoc Next;
         if (!TL->isNull())
@@ -930,7 +938,7 @@ Cxxi::Type^ Parser::WalkType(clang::QualType QualType, clang::TypeLoc* TL,
 
 //-----------------------------------//
 
-Cxxi::Enumeration^ Parser::WalkEnum(clang::EnumDecl* ED)
+Bridge::Enumeration* Parser::WalkEnum(clang::EnumDecl* ED)
 {
     using namespace clang;
     using namespace clix;
@@ -938,7 +946,7 @@ Cxxi::Enumeration^ Parser::WalkEnum(clang::EnumDecl* ED)
     auto NS = GetNamespace(ED);
     assert(NS && "Expected a valid namespace");
 
-    auto Name = marshalString<E_UTF8>(GetTagDeclName(ED));
+    auto Name = GetTagDeclName(ED);
     auto E = NS->FindEnum(Name, /*Create=*/false);
 
     if (E && !E->IsIncomplete)
@@ -948,12 +956,13 @@ Cxxi::Enumeration^ Parser::WalkEnum(clang::EnumDecl* ED)
         E = NS->FindEnum(Name, /*Create=*/true);
 
     if (ED->isScoped())
-        E->Modifiers |= Cxxi::Enumeration::EnumModifiers::Scoped;
+        E->Modifiers = (Bridge::EnumModifiers)
+            ((int)E->Modifiers | (int)Bridge::EnumModifiers::Scoped);
 
     // Get the underlying integer backing the enum.
     QualType IntType = ED->getIntegerType();
-    E->Type = WalkType(IntType, 0);
-    E->BuiltinType = safe_cast<Cxxi::BuiltinType^>(WalkType(IntType, 0,
+    E->QualifiedType = GetQualifiedType(IntType, WalkType(IntType, 0));
+    E->BuiltinType = static_cast<Bridge::BuiltinType*>(WalkType(IntType, 0,
         /*DesugarType=*/true));
 
     if (!ED->isThisDeclarationADefinition())
@@ -971,13 +980,14 @@ Cxxi::Enumeration^ Parser::WalkEnum(clang::EnumDecl* ED)
         if (const RawComment* Comment = AST->getRawCommentForAnyRedecl(ECD))
             BriefText = Comment->getBriefText(*AST);
 
-        auto EnumItem = gcnew Cxxi::Enumeration::Item();
-        EnumItem->Name = marshalString<E_UTF8>(ECD->getNameAsString());
-        EnumItem->Value = (int) ECD->getInitVal().getLimitedValue();
-        EnumItem->Comment = marshalString<E_UTF8>(BriefText);
+        auto EnumItem = Bridge::EnumItem();
+        EnumItem.Name = ECD->getNameAsString();
+        EnumItem.Value = (int) ECD->getInitVal().getLimitedValue();
+        HandleComments(ECD, &EnumItem);
+
         //EnumItem->ExplicitValue = ECD->getExplicitValue();
 
-        E->AddItem(EnumItem);
+        E->Items.push_back(EnumItem);
     }
 
     return E;
@@ -985,7 +995,7 @@ Cxxi::Enumeration^ Parser::WalkEnum(clang::EnumDecl* ED)
 
 //-----------------------------------//
 
-static Cxxi::CallingConvention ConvertCallConv(clang::CallingConv CC)
+static Bridge::CallingConvention ConvertCallConv(clang::CallingConv CC)
 {
     using namespace clang;
 
@@ -993,23 +1003,23 @@ static Cxxi::CallingConvention ConvertCallConv(clang::CallingConv CC)
     {
     case CC_Default:
     case CC_C:
-        return Cxxi::CallingConvention::C;
+        return Bridge::CallingConvention::C;
     case CC_X86StdCall:
-        return Cxxi::CallingConvention::StdCall;
+        return Bridge::CallingConvention::StdCall;
     case CC_X86FastCall:
-        return Cxxi::CallingConvention::FastCall;
+        return Bridge::CallingConvention::FastCall;
     case CC_X86ThisCall:
-        return Cxxi::CallingConvention::ThisCall;
+        return Bridge::CallingConvention::ThisCall;
     case CC_X86Pascal:
     case CC_AAPCS:
     case CC_AAPCS_VFP:
-        return Cxxi::CallingConvention::Unknown;
+        return Bridge::CallingConvention::Unknown;
     }
 
-    return Cxxi::CallingConvention::Default;
+    return Bridge::CallingConvention::Default;
 }
 
-void Parser::WalkFunction(clang::FunctionDecl* FD, Cxxi::Function^ F,
+void Parser::WalkFunction(clang::FunctionDecl* FD, Bridge::Function* F,
                           bool IsDependent)
 {
     using namespace clang;
@@ -1021,7 +1031,7 @@ void Parser::WalkFunction(clang::FunctionDecl* FD, Cxxi::Function^ F,
     auto NS = GetNamespace(FD);
     assert(NS && "Expected a valid namespace");
 
-    F->Name = marshalString<E_UTF8>(FD->getNameAsString());
+    F->Name = FD->getNameAsString();
     F->Namespace = NS;
     F->IsVariadic = FD->isVariadic();
     F->IsInline = FD->isInlined();
@@ -1036,14 +1046,14 @@ void Parser::WalkFunction(clang::FunctionDecl* FD, Cxxi::Function^ F,
     F->ReturnType = WalkType(FD->getResultType(), &RTL);
 
     String Mangled = GetDeclMangledName(FD, TargetCXXABI::Microsoft, IsDependent);
-    F->Mangled = marshalString<E_UTF8>(Mangled);
+    F->Mangled = Mangled;
 
     for(auto it = FD->param_begin(); it != FD->param_end(); ++it)
     {
         ParmVarDecl* VD = (*it);
         
-        auto P = gcnew Cxxi::Parameter();
-        P->Name = marshalString<E_UTF8>(VD->getNameAsString());
+        auto P = new Bridge::Parameter();
+        P->Name = VD->getNameAsString();
 
         TypeLoc PTL;
         if (auto TSI = VD->getTypeSourceInfo())
@@ -1052,11 +1062,11 @@ void Parser::WalkFunction(clang::FunctionDecl* FD, Cxxi::Function^ F,
          
         P->HasDefaultValue = VD->hasDefaultArg();
 
-        F->Parameters->Add(P);
+        F->Parameters.push_back(P);
     }
 }
 
-Cxxi::Function^ Parser::WalkFunction(clang::FunctionDecl* FD, bool IsDependent,
+Bridge::Function* Parser::WalkFunction(clang::FunctionDecl* FD, bool IsDependent,
                                      bool AddToNamespace)
 {
     using namespace clang;
@@ -1065,17 +1075,17 @@ Cxxi::Function^ Parser::WalkFunction(clang::FunctionDecl* FD, bool IsDependent,
     auto NS = GetNamespace(FD);
     assert(NS && "Expected a valid namespace");
 
-    auto Name = marshalString<E_UTF8>(FD->getNameAsString());
-    Cxxi::Function^ F = NS->FindFunction(Name, /*Create=*/ false);
+    auto Name = FD->getNameAsString();
+    auto F = NS->FindFunction(Name, /*Create=*/ false);
 
     if (F != nullptr)
         return F;
 
-    F = gcnew Cxxi::Function();
+    F = new Bridge::Function();
     WalkFunction(FD, F, IsDependent);
 
     if (AddToNamespace)
-        NS->Functions->Add(F);
+        NS->Functions.push_back(F);
 
     return F;
 }
@@ -1137,7 +1147,7 @@ void Parser::WalkAST()
 
 //-----------------------------------//
 
-Cxxi::TranslationUnit^ Parser::GetModule(clang::SourceLocation Loc)
+Bridge::TranslationUnit* Parser::GetModule(clang::SourceLocation Loc)
 {
     using namespace clang;
     using namespace clix;
@@ -1155,7 +1165,7 @@ Cxxi::TranslationUnit^ Parser::GetModule(clang::SourceLocation Loc)
         return nullptr;
     }
 
-    auto Unit = Lib->FindOrCreateModule(marshalString<E_UTF8>(File));
+    auto Unit = Lib->FindOrCreateModule(File);
     Unit->IsSystemHeader = SM.isInSystemHeader(Loc);
 
     return Unit;
@@ -1213,12 +1223,12 @@ void Parser::WalkMacros(clang::PreprocessingRecord* PR)
             if (Invalid || Expression.empty())
                 break;
 
-            auto macro = gcnew Cxxi::MacroDefinition();
-            macro->Name = marshalString<E_UTF8>(II->getName())->Trim();
-            macro->Expression = marshalString<E_UTF8>(Expression)->Trim();
+            auto macro = new Bridge::MacroDefinition();
+            macro->Name = II->getName().trim();
+            macro->Expression = Expression.trim();
 
             auto M = GetModule(BeginExpr);
-            M->Macros->Add(macro);
+            M->Macros.push_back(macro);
 
             break;
         }
@@ -1229,20 +1239,20 @@ void Parser::WalkMacros(clang::PreprocessingRecord* PR)
 
 //-----------------------------------//
 
-Cxxi::Variable^ Parser::WalkVariable(clang::VarDecl *VD)
+Bridge::Variable* Parser::WalkVariable(clang::VarDecl *VD)
 {
     using namespace clang;
     using namespace clix;
 
-    auto Var = gcnew Cxxi::Variable();
-    Var->Name = marshalString<E_UTF8>(VD->getName());
+    auto Var = new Bridge::Variable();
+    Var->Name = VD->getName();
 
     return Var;
 }
 
 //-----------------------------------//
 
-void Parser::HandleComments(clang::Decl* D, Cxxi::Declaration^ Decl)
+void Parser::HandleComments(clang::Decl* D, Bridge::Declaration* Decl)
 {
     using namespace clang;
     using namespace clix;
@@ -1252,7 +1262,7 @@ void Parser::HandleComments(clang::Decl* D, Cxxi::Declaration^ Decl)
     if (const RawComment* Comment = AST->getRawCommentForAnyRedecl(D))
         BriefText = Comment->getBriefText(*AST);
 
-    Decl->BriefComment = marshalString<E_UTF8>(BriefText);
+    Decl->BriefComment = BriefText;
 
     SourceManager& SM = C->getSourceManager();
     const LangOptions& LangOpts = C->getLangOpts();
@@ -1264,18 +1274,18 @@ void Parser::HandleComments(clang::Decl* D, Cxxi::Declaration^ Decl)
     //assert(!Invalid && "Should have a valid location");
     
     if (!Invalid)
-        Decl->DebugText = marshalString<E_UTF8>(DeclText);
+        Decl->DebugText = DeclText;
 }
 
 //-----------------------------------//
 
-Cxxi::Declaration^ Parser::WalkDeclarationDef(clang::Decl* D)
+Bridge::Declaration* Parser::WalkDeclarationDef(clang::Decl* D)
 {
     return WalkDeclaration(D, 0, /*IgnoreSystemDecls=*/true,
         /*CanBeDefinition=*/true);
 }
 
-Cxxi::Declaration^ Parser::WalkDeclaration(clang::Decl* D, clang::TypeLoc* TL,
+Bridge::Declaration* Parser::WalkDeclaration(clang::Decl* D, clang::TypeLoc* TL,
                                            bool IgnoreSystemDecls,
                                            bool CanBeDefinition)
 {
@@ -1300,7 +1310,7 @@ Cxxi::Declaration^ Parser::WalkDeclaration(clang::Decl* D, clang::TypeLoc* TL,
         StringRef AnnotationText = Annotation->getAnnotation();
     }
 
-    Cxxi::Declaration^ Decl;
+    Bridge::Declaration* Decl;
 
     auto Kind = D->getKind();
     switch(D->getKind())
@@ -1334,8 +1344,7 @@ Cxxi::Declaration^ Parser::WalkDeclaration(clang::Decl* D, clang::TypeLoc* TL,
 
         auto NS = GetNamespace(TD);
         Template->Namespace = NS;
-        NS->Templates->Add(Template);
-        
+        NS->ClassTemplates.push_back(Template);
         Decl = Template;
         
         break;
@@ -1343,9 +1352,7 @@ Cxxi::Declaration^ Parser::WalkDeclaration(clang::Decl* D, clang::TypeLoc* TL,
     case Decl::ClassTemplateSpecialization:
     {
         auto TS = cast<ClassTemplateSpecializationDecl>(D);
-
-        auto CT = gcnew Cxxi::ClassTemplateSpecialization();
-
+        auto CT = new Bridge::ClassTemplateSpecialization();
         Decl = CT;
 
         break;
@@ -1353,8 +1360,9 @@ Cxxi::Declaration^ Parser::WalkDeclaration(clang::Decl* D, clang::TypeLoc* TL,
     case Decl::ClassTemplatePartialSpecialization:
     {
         auto TS = cast<ClassTemplatePartialSpecializationDecl>(D);
-        auto CT = gcnew Cxxi::ClassTemplatePartialSpecialization();
+        auto CT = new Bridge::ClassTemplatePartialSpecialization();
         Decl = CT;
+
         break;
     }
     case Decl::FunctionTemplate:
@@ -1364,10 +1372,9 @@ Cxxi::Declaration^ Parser::WalkDeclaration(clang::Decl* D, clang::TypeLoc* TL,
 
         auto NS = GetNamespace(TD);
         Template->Namespace = NS;
-        NS->Templates->Add(Template);
-
+        NS->FunctionTemplates.push_back(Template);
         Decl = Template;
-        
+
         break;
     }
     case Decl::Enum:
@@ -1376,9 +1383,8 @@ Cxxi::Declaration^ Parser::WalkDeclaration(clang::Decl* D, clang::TypeLoc* TL,
 
         auto E = WalkEnum(ED);
         HandleComments(ED, E);
-
         Decl = E;
-        
+
         break;
     }
     case Decl::Function:
@@ -1389,9 +1395,8 @@ Cxxi::Declaration^ Parser::WalkDeclaration(clang::Decl* D, clang::TypeLoc* TL,
 
         auto F = WalkFunction(FD);
         HandleComments(FD, F);
-
         Decl = F;
-        
+
         break;
     }
     case Decl::LinkageSpec:
@@ -1403,7 +1408,7 @@ Cxxi::Declaration^ Parser::WalkDeclaration(clang::Decl* D, clang::TypeLoc* TL,
             clang::Decl* D = (*it);
             Decl = WalkDeclarationDef(D);
         }
-        
+
         break;
     }
     case Decl::Typedef:
@@ -1411,7 +1416,7 @@ Cxxi::Declaration^ Parser::WalkDeclaration(clang::Decl* D, clang::TypeLoc* TL,
         TypedefDecl* TD = cast<TypedefDecl>(D);
 
         auto NS = GetNamespace(TD);
-        auto Name = marshalString<E_UTF8>(GetDeclName(TD));
+        auto Name = GetDeclName(TD);
         auto Typedef = NS->FindTypedef(Name, /*Create=*/false);
         if (Typedef) return Typedef;
 
@@ -1422,7 +1427,7 @@ Cxxi::Declaration^ Parser::WalkDeclaration(clang::Decl* D, clang::TypeLoc* TL,
             WalkType(TD->getUnderlyingType(), &TTL));
 
         Decl = Typedef;
-            
+
         break;
     }
     case Decl::Namespace:
@@ -1443,7 +1448,6 @@ Cxxi::Declaration^ Parser::WalkDeclaration(clang::Decl* D, clang::TypeLoc* TL,
 
         auto V = WalkVariable(VD);
         HandleComments(VD, V);
-
         Decl = V;
 
         break;
@@ -1491,14 +1495,14 @@ struct DiagnosticConsumer : public clang::DiagnosticConsumer
     std::vector<Diagnostic> Diagnostics;
 };
 
-ParserResult^ Parser::Parse(const std::string& File)
+ParserResult Parser::Parse(const std::string& File)
 {
-    auto res = gcnew ParserResult();
-    res->Library = Lib;
+    auto res = ParserResult();
+    res.Library = Lib;
 
     if (File.empty())
     {
-        res->Kind = ParserResultKind::FileNotFound;
+        res.Kind = ParserResultKind::FileNotFound;
         return res;
     }
 
@@ -1512,7 +1516,7 @@ ParserResult^ Parser::Parse(const std::string& File)
     if (!C->getPreprocessor().getHeaderSearchInfo().LookupFile(File, /*isAngled*/true,
         nullptr, Dir, nullptr, nullptr, nullptr, nullptr))
     {
-        res->Kind = ParserResultKind::FileNotFound;
+        res.Kind = ParserResultKind::FileNotFound;
         return res;
     }
 
@@ -1542,20 +1546,31 @@ ParserResult^ Parser::Parse(const std::string& File)
         auto FileName = Source.getFilename(Diag.Location);
 
         auto PDiag = ParserDiagnostic();
-        PDiag.FileName = marshalString<E_UTF8>(FileName.str());
-        PDiag.Message = marshalString<E_UTF8>(Diag.Message.str());
-        res->Diagnostics->Add(PDiag);
+        PDiag.FileName = FileName.str();
+        PDiag.Message = Diag.Message.str();
+        res.Diagnostics.push_back(PDiag);
     }
 
     if(C->getDiagnosticClient().getNumErrors() != 0)
     {
-        res->Kind = ParserResultKind::Error;
+        res.Kind = ParserResultKind::Error;
         return res;
     }
 
     AST = &C->getASTContext();
     WalkAST();
 
-    res->Kind = ParserResultKind::Success;
+    res.Kind = ParserResultKind::Success;
     return res;
  }
+
+ParserResult Parse(const ParserOptions& Opts)
+{
+    auto Res = ParserResult();
+    Res.Kind = ParserResultKind::Error;
+
+    if (!Opts.FileName) return Res;
+
+    Parser p(Opts);
+    return p.Parse(Opts.FileName);
+}

@@ -9,6 +9,8 @@
 
 #define CXXI_API
 
+namespace Cxxi { namespace Bridge {
+
 // Types
 
 struct TypeQualifiers
@@ -24,33 +26,58 @@ struct Type
 
 struct QualifiedType
 {
-    Type Type;
+    Type* Type;
     TypeQualifiers Qualifiers;
+};
+
+enum class PrimitiveType
+{
+    Null,
+    Void,
+    Bool,
+    WideChar,
+    Int8,
+    Char = Int8,
+    UInt8,
+    UChar = UInt8,
+    Int16,
+    UInt16,
+    Int32,
+    UInt32,
+    Int64,
+    UInt64,
+    Float,
+    Double
+};
+
+struct BuiltinType : public Type
+{
+    PrimitiveType Type;
 };
 
 struct Declaration;
 
-struct TagType : Type
+struct TagType : public Type
 {
     Declaration* Declaration;
 };
 
-enum class ArraySize
+enum class ArrayTypeSize
 {
     Constant,
     Variable
 };
 
-struct ArrayType : Type
+struct ArrayType : public Type
 {
-    QualifiedType Type;
-    ArraySize SizeType;
+    QualifiedType QualifiedType;
+    ArrayTypeSize SizeType;
     long Size;
 };
 
 struct Parameter;
 
-struct FunctionType : Type
+struct FunctionType : public Type
 {
     QualifiedType ReturnType;
     std::vector<Parameter*> Parameters;
@@ -64,20 +91,20 @@ enum struct TypeModifier
     RVReference
 };
 
-struct PointerType : Type
+struct PointerType : public Type
 {
-    QualifiedType Pointee;
+    QualifiedType QualifiedPointee;
     TypeModifier Modifier;
 };
 
-struct MemberPointerType : Type
+struct MemberPointerType : public Type
 {
     QualifiedType Pointee;
 };
 
 struct TypedefDecl;
 
-struct TypedefType
+struct TypedefType : public Type
 {
     TypedefDecl* Declaration;
 };
@@ -104,7 +131,7 @@ struct TemplateArgument
 
 struct Template;
 
-struct TemplateSpecializationType : Type
+struct TemplateSpecializationType : public Type
 {
     std::vector<TemplateArgument> Arguments;
     Template* Template;
@@ -115,7 +142,7 @@ struct TemplateParameter
     const char* Name;
 };
 
-struct TemplateParameterType : Type
+struct TemplateParameterType : public Type
 {
     TemplateParameter Parameter;
     Template* Template;
@@ -128,22 +155,42 @@ struct Namespace;
 struct Declaration
 {
     Namespace* Namespace;
-    const char* Name;
-    const char* Comment;
+    std::string Name;
+    std::string BriefComment;
+    std::string DebugText;
     unsigned DefinitionOrder;
+    bool IsIncomplete;
 };
 
-struct Parameter : Declaration
+struct TypedefDecl : public Declaration
 {
-    Type* Type;
+    QualifiedType QualifiedType;
 };
 
-struct Function : Declaration
+struct Parameter : public Declaration
+{
+    QualifiedType QualifiedType;
+    bool HasDefaultValue;
+};
+
+enum class CallingConvention
+{
+    Default,
+    C,
+    StdCall,
+    ThisCall,
+    FastCall,
+    Unknown
+};
+
+struct Function : public Declaration
 {
     Type* ReturnType;
     bool IsVariadic;
     bool IsInline;
-    const char* Mangled;
+    std::string Mangled;
+    CallingConvention CallingConvention;
+    std::vector<Parameter*> Parameters;
 };
 
 enum struct CXXMethodKind
@@ -211,7 +258,7 @@ enum struct AccessSpecifier
     Public
 };
 
-struct Method : Function
+struct Method : public Function
 {
     AccessSpecifier Access;
 
@@ -222,65 +269,121 @@ struct Method : Function
 
     CXXMethodKind Kind;
     CXXOperatorKind OperatorKind;
+
+    bool IsDefaultConstructor;
+    bool IsCopyConstructor;
+    bool IsMoveConstructor;
 };
 
 enum struct EnumModifiers
 {
-    Anonymous,
-    Scoped,
-    Flags
+    Anonymous = 1 << 0,
+    Scoped = 1 << 1,
+    Flags  = 1 << 2,
 };
 
-struct EnumerationItem
+struct EnumItem : public Declaration
 {
-    const char* Name;
+    std::string Name;
     long Value;
 };
 
-struct Enumeration : Declaration
+struct Enumeration : public Declaration
 {
     EnumModifiers Modifiers;
+    QualifiedType QualifiedType;
+    BuiltinType* BuiltinType;
+    std::vector<EnumItem> Items;
+};
+
+struct Variable : public Declaration
+{
 };
 
 struct BaseClassSpecifier
 {
     AccessSpecifier Access;
     bool IsVirtual;
-    Type *Type;
+    Type* Type;
 };
 
-struct Class : Declaration
-{
-    std::vector<BaseClassSpecifier> Bases;
-    std::vector<Field> Fields;
-    std::vector<Method> Methods;
+struct Class;
 
-    bool IsPOD;
-    bool IsAbstract;
-    bool IsUnion;
-};
-
-struct Field : Declaration
+struct Field : public Declaration
 {
-    QualifiedType Type;
+    QualifiedType QualifiedType;
 
     AccessSpecifier Access;
     unsigned Offset;
     Class* Class;
 };
 
-struct ClassTemplate : Declaration
+struct Class : public Declaration
+{
+    std::vector<BaseClassSpecifier*> Bases;
+    std::vector<Field*> Fields;
+    std::vector<Method*> Methods;
+
+    bool IsPOD;
+    bool IsAbstract;
+    bool IsUnion;
+};
+
+struct Template : public Declaration
+{
+};
+
+struct ClassTemplate : public Template
 {
     Declaration* TemplatedDecl;
 };
 
-struct FunctionTemplate : Declaration
+struct ClassTemplateSpecialization : public Declaration
+{
+};
+
+struct ClassTemplatePartialSpecialization : public Declaration
+{
+};
+
+struct FunctionTemplate : public Template
 {
     Declaration* TemplatedDecl;
 };
 
-struct Namespace : Declaration
+struct Namespace : public Declaration
 {
+    Class* FindClass(const std::string& Name, bool IsComplete,
+        bool Create = false)
+    {
+        return 0;
+    }
+
+    Class* FindClass(const std::string& Name, bool Create = false)
+    {
+        return 0;
+    }
+
+    Enumeration* FindEnum(const std::string& Name, bool Create = false)
+    {
+        return 0;
+    }
+
+    Function* FindFunction(const std::string& Name, bool Create = false)
+    {
+        return 0;
+    }
+
+    TypedefDecl* FindTypedef(const std::string& Name, bool Create = false)
+    {
+        return 0;
+    }
+
+    Namespace* FindCreateNamespace(const std::string& Name, Namespace* Parent)
+    {
+        return 0;
+    }
+
     std::vector<Namespace*> Namespaces;
     std::vector<Enumeration*> Enums;
     std::vector<Function*> Functions;
@@ -290,14 +393,27 @@ struct Namespace : Declaration
     std::vector<TypedefDecl*> Typedefs;
 };
 
-struct TranslationUnit : Namespace
+struct MacroDefinition : public Declaration
 {
-    const char* FileName;
+    std::string Expression;
+};
+
+struct TranslationUnit : public Namespace
+{
+    std::string FileName;
     bool IsSystemHeader;
     std::vector<Namespace*> Namespaces;
+    std::vector<MacroDefinition*> Macros;
 };
 
 struct Library
 {
+    TranslationUnit* FindOrCreateModule(const std::string& File)
+    {
+        return 0;
+    }
 
+    std::vector<TranslationUnit*> Units;
 };
+
+} }

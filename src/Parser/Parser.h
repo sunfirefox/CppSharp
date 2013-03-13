@@ -5,6 +5,7 @@
 *
 ************************************************************************/
 
+#include "API.h"
 #include "AST.h"
 
 #include <llvm/Support/Host.h>
@@ -29,19 +30,7 @@
 #define ARRAY_SIZE(arr) (sizeof(arr) / sizeof(arr[0]))
 #define Debug printf
 
-struct ParserOptions
-{
-    const char* FileName;
-    std::vector<const char*> Defines;
-    std::vector<const char*> IncludeDirs;
-    int ToolSetToUse;
-    bool Verbose;
-};
-
-struct ParserResult
-{
-
-};
+namespace Cxxi {
 
 struct Parser
 {
@@ -55,20 +44,20 @@ protected:
     // AST traversers
     void WalkAST();
     void WalkMacros(clang::PreprocessingRecord* PR);
-    Declaration WalkDeclaration(clang::Decl* D, clang::TypeLoc* = 0,
+    Bridge::Declaration* WalkDeclaration(clang::Decl* D, clang::TypeLoc* = 0,
         bool IgnoreSystemDecls = true, bool CanBeDefinition = false);
-    Declaration WalkDeclarationDef(clang::Decl* D);
-    Enumeration WalkEnum(clang::EnumDecl*);
-    Function WalkFunction(clang::FunctionDecl*, bool IsDependent = false,
+    Bridge::Declaration* WalkDeclarationDef(clang::Decl* D);
+    Bridge::Enumeration* WalkEnum(clang::EnumDecl*);
+    Bridge::Function* WalkFunction(clang::FunctionDecl*, bool IsDependent = false,
         bool AddToNamespace = true);
-    Class WalkRecordCXX(clang::CXXRecordDecl*, bool IsDependent = false);
-    Method WalkMethodCXX(clang::CXXMethodDecl*);
-    Field WalkFieldCXX(clang::FieldDecl*, Cxxi::Class^);
-    ClassTemplate Parser::WalkClassTemplate(clang::ClassTemplateDecl*);
-    FunctionTemplate Parser::WalkFunctionTemplate(
+    Bridge::Class* WalkRecordCXX(clang::CXXRecordDecl*, bool IsDependent = false);
+    Bridge::Method* WalkMethodCXX(clang::CXXMethodDecl*);
+    Bridge::Field* WalkFieldCXX(clang::FieldDecl*, Bridge::Class*);
+    Bridge::ClassTemplate* Parser::WalkClassTemplate(clang::ClassTemplateDecl*);
+    Bridge::FunctionTemplate* Parser::WalkFunctionTemplate(
         clang::FunctionTemplateDecl*);
-    Variable WalkVariable(clang::VarDecl*);
-    Type WalkType(clang::QualType, clang::TypeLoc* = 0,
+    Bridge::Variable* WalkVariable(clang::VarDecl*);
+    Bridge::Type* WalkType(clang::QualType, clang::TypeLoc* = 0,
       bool DesugarType = false);
 
     // Clang helpers
@@ -76,12 +65,15 @@ protected:
     std::string GetDeclMangledName(clang::Decl*, clang::TargetCXXABI,
         bool IsDependent = false);
     std::string GetTypeName(const clang::Type*);
-    void HandleComments(clang::Decl* D, Cxxi::Declaration^);
-    void WalkFunction(clang::FunctionDecl* FD, Cxxi::Function^ F,
+    void HandleComments(clang::Decl* D, Bridge::Declaration*);
+    void WalkFunction(clang::FunctionDecl* FD, Bridge::Function* F,
         bool IsDependent = false);
 
-    TranslationUnit GetModule(clang::SourceLocation Loc);
-    Namespace GetNamespace(const clang::NamedDecl*);
+    Bridge::TranslationUnit* GetModule(clang::SourceLocation Loc);
+    Bridge::Namespace* GetNamespace(const clang::NamedDecl*);
+
+    Bridge::Library* Lib;
+    unsigned Index;
 
     llvm::OwningPtr<clang::CompilerInstance> C;
     clang::ASTContext* AST;
@@ -93,3 +85,5 @@ typedef std::string String;
 
 String StringFormatArgs(const char* str, va_list args);
 String StringFormat(const char* str, ...);
+
+}
