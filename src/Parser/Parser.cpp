@@ -5,7 +5,7 @@
 *
 ************************************************************************/
 
-#include "Parser.h"
+#include "ClangParser.h"
 
 #include <llvm/Support/Path.h>
 #include <clang/Basic/Version.h>
